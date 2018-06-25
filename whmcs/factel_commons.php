@@ -8,11 +8,8 @@
 
 use WHMCS\Database\Capsule;
  
-// EDITE LA CONFIGURACION DEL MODULO EN ESTE ARCHIVO
 require_once __DIR__ . '/factel_config.php';
  
-// NO ES NECESARIO MODIFICAR CONFIGURACION EN ESTE ARCHIVO /////
-
 if(!function_exists("createQrCode")) {
 function createQrCode($_invoiceid,$_consecutivo,$_clave) {
     $size = '150x150';
@@ -43,18 +40,18 @@ function hook_getFactelDetails($vars) {
         $extraTemplateVariables['factel_comprobante']=$xmlData->comprobante;
         $extraTemplateVariables['factel_xml']=$xmlData->xml;
 
-        if(strpos($xmlData->comprobante,"ESTADO=aceptado")!=FALSE) {
+        if(strpos($xmlData->comprobante,"recepcionEstado=aceptado")!=FALSE) {
             $extraTemplateVariables['factel_aceptada']=1;
         }
 
-        if(strpos($xmlData->comprobante,"ESTADO=procesando")!=FALSE) {
+        if(strpos($xmlData->comprobante,"recepcionEstado=procesando")!=FALSE) {
             $extraTemplateVariables['factel_pendiente']=1;
         }
         if(empty($xmlData->comprobante)) {
             $extraTemplateVariables['factel_pendiente']=1;
         }
 
-        if(strpos($xmlData->comprobante,"ESTADO=rechazado")!=FALSE) {
+        if(strpos($xmlData->comprobante,"recepcionEstado=rechazado")!=FALSE) {
             $extraTemplateVariables['factel_rechazada']=1;
         }
 
@@ -118,6 +115,8 @@ function downloadFile($_file_path) { //, $_downloadname) {
                 list($size_unit, $range_orig) = explode('=', $_SERVER['HTTP_RANGE'], 2);
                 if ($size_unit == 'bytes')
                 {
+                    //multiple ranges could be specified at the same time, but for simplicity only serve the first range
+                    //http://tools.ietf.org/id/draft-ietf-http-range-retrieval-00.txt
                     list($range, $extra_ranges) = explode(',', $range_orig, 2);
                 }
                 else
@@ -194,6 +193,26 @@ if(!function_exists("downloadXML")) {
     }
 }
 
+if(!function_exists("objectPrinter")) {
+    function objectPrinter($obj, $level="") {
+        $output="";
+        foreach ($obj as $key => $value) {
+            if (is_object($value)) {
+                $output = $output."$level$key:\n";
+                $output = $output.objectPrinter($value,$level."   ");
+            } elseif (is_array($value)) {
+                $output = $output."$level$key:\n";
+                foreach ($value as $arrKey => $arrValue) {
+                    $output = $output.objectPrinter($value,$level."   ");
+                }
+            } else {
+                $output = $output."$level$key: $value\n";
+            }
+        }
+        return $output;
+    }
+}
+
 if(!function_exists("getComprobanteFactel")) {
     function getComprobanteFactel($clave_factura,$apiToken) {
         $_xmlData["clave"]=$clave_factura;
@@ -232,10 +251,8 @@ if(!function_exists("getComprobanteFactel")) {
 }
 
 if(!function_exists("anularFacturaFactel")) {
-    function anularFacturaFactel($idNota, $idFactura, $apiToken) {
-        
-        $_xmlData["clave"]=$clave_factura;
-        
+    function anularFacturaFactel($consecutivoNota, $referenciaFactura, $apiToken) {
+
         $curl = curl_init();
 
         curl_setopt_array($curl, array(
@@ -246,7 +263,7 @@ if(!function_exists("anularFacturaFactel")) {
             CURLOPT_TIMEOUT => 30,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => "DELETE",
-            CURLOPT_POSTFIELDS => "{\n\t\"consecutivo\":\"$idNota\",\n\t\"referencia\":\"$idFactura\",\n\t\"firmar\":true\n}\n",
+            CURLOPT_POSTFIELDS => "{\n\t\"consecutivo\":\"$consecutivoNota\",\n\t\"referencia\":\"$referenciaFactura\",\n\t\"firmar\":true\n}\n",
             CURLOPT_HTTPHEADER => array(
                 "content-type: application/json",
                 "factel-api-key: $apiToken"
@@ -434,7 +451,7 @@ if(!function_exists("setFacturaAnulada")) {
             // hay una factura electronica disponible para anular
             $facturaData = Capsule::table('mod_factel_historico')->where('id_factura', $invoiceid)->get();
             $factuData = $facturaData[0];
-            if ( strpos($factuData->estado, "Cancelada con NC") !== FALSE ) {
+            if ( strpos($factuData->estado, "Anulada con NC") !== FALSE ) {
                 // factura ya fue anulada
                 $xmlObj = json_decode($factuData->xmlData);
                 return [
@@ -445,8 +462,11 @@ if(!function_exists("setFacturaAnulada")) {
             } elseif ( strcmp(strtolower($factuData->estado), "aceptada") !== FALSE ) {
                 // se puede eliminar la factura, tiene estado aceptada
                 $xmlObj = json_decode($factuData->xmlData);
-                $notasCount = Capsule::table('mod_factel_historico')->where('estado', "Cancelada")->count();
-                $notasCount+=1;
+                $notasCount = Capsule::table('mod_factel_historico')
+                                ->where('estado', 'like', '%nulada con NC%')
+                                ->count();
+                $notasCount=($notasCount+1)."";
+                
                 $config = getModuleConfig();
                 
                 $ar = json_decode(anularFacturaFactel($notasCount,$xmlObj->consecutivo,$config["token"]));
@@ -455,7 +475,7 @@ if(!function_exists("setFacturaAnulada")) {
                     // factura anulada en el API
                     Capsule::table('mod_factel_historico')->where('id_factura',$invoiceid)->update(
                         [
-                            'estado' => 'Cancelada con NC#'.$ar->clave
+                            'estado' => 'Anulada con NC#'.$ar->clave
                         ]
                     );
                     $_original = localAPI('GetInvoice', ['invoiceid' => $invoiceid], FACTEL_WHMCS_ADMIN);
@@ -463,7 +483,7 @@ if(!function_exists("setFacturaAnulada")) {
                         localAPI("UpdateInvoice",[
                             "invoiceid" => $invoiceid,
                             "status" => "Cancelled",
-                            "notes" => $_original['notes']." Anulada con NC#".$ar->clave
+                            "notes" => "Anulada con NC#".$ar->clave
                         ], FACTEL_WHMCS_ADMIN);
                     }
                 } else {
@@ -533,7 +553,7 @@ if(!function_exists("getFacturaDetails")) {
                 localAPI($command, $values, $adminuser);
 
                 if($xmlobj->error!==TRUE) {
-                    if(strpos($xmlobj->comprobante,"ESTADO=rechazado")==FALSE) {
+                    if(strpos($xmlobj->comprobante,"recepcionEstado=rechazado")==FALSE) {
                         Capsule::table('mod_factel_historico')->where('id_factura',$invoiceid)->update(
                             [
                                 'estado' => 'Valida, comprobante aceptado.',

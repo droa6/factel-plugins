@@ -7,9 +7,7 @@
  */
 
 use WHMCS\Database\Capsule;
-
-// NO ES NECESARIO MODIFICAR CONFIGURACION EN ESTE ARCHIVO /////
-
+ 
 require_once __DIR__ . '/factel_commons.php';
 
 function getInvoiceUser($_invoiceid) {
@@ -33,7 +31,7 @@ function factel_config() {
     $configarray = array(
     "name" => "Factel",
     "description" => "Este modulo permite la integracion con FACTEL, producto de Itros para facturacion electronica.",
-    "version" => "1.5",
+    "version" => "1.4",
     "author" => "<a href='https://itros.net/factel'>Itros Soluciones</a>",
     "language" => "spanish",
     "fields" => array(
@@ -44,6 +42,8 @@ function factel_config() {
 }
 
 function factel_activate() {
+
+    // Create a new table.
     try {
         if (! Capsule::schema()->hasTable('mod_factel_historico')) {
             Capsule::schema()->create(
@@ -68,8 +68,9 @@ function factel_activate() {
 }
 
 function factel_deactivate() {
-    // LA DESACTIVACION NO BORRA LOS DATOS DE FACTEL POR SI SE NECESITA SOLO ACTUALIZAR LA VERSION
+
     try {
+        # Remove Custom DB Table
         return array('status'=>'success','description'=>'Listo, el modulo de Factura Electronica se encuentra desactivado.');
     } catch (\Exception $e) {
         return array('status'=>'error','description'=>'Ocurrio un error desactivando el modulo, por favor intente nuevamente.');
@@ -92,51 +93,61 @@ function getInvoicePDF($_invoiceid) {
   return $apiresults ;
 }
 
-function showMessage($_xmlObj, $_id_factura, $_clave, $_consecutivo, $_comprobante, $_xmlData) {
+// ($xmlData, $id_factura, $xmlData->clave, $xmlData->consecutivo, $xmlData->comprobante, $xmlData->xml);
+function showMessage($_xmlObj, $_id_factura, $_clave, $_consecutivo, $_comprobante, $_xmlData, $updateStatus=FALSE) {
     $_comprobante=str_replace("\n","",$_comprobante);
     $_comprobante=str_replace("'","\"",$_comprobante);
 
-    if(strpos($_comprobante,"ESTADO=aceptado")!==FALSE) {
+    if ( strcmp($_comprobante, "null")!=0 && $_xmlObj->error !== TRUE ) {
         echo '<div class="successbox" id="factel-message" style="display: none;"><strong><span class="title" id="factel-result-title"></span></strong><br><div id="factel-result-detail"></div></div>';
-    }
-    if(strpos($_comprobante,"ESTADO=rechazado")!==FALSE || $_xmlObj->error === TRUE) {
+    } else {
         echo '<div class="infobox" id="factel-message" style="display: none;"><strong><span class="title" id="factel-result-title"></span></strong><br><div id="factel-result-detail"></div></div>';
     }
     
     if ($_xmlObj->error !== TRUE ) {
         echo "<pre>Clave: [".$_clave."]\n";
-        echo "Consecutivo: [".$_consecutivo."]</pre>\n";
+        echo "Consecutivo: [".$_consecutivo."]\n";
+        echo "Comprobante:\n".objectPrinter(json_decode($_comprobante))."\n";
+        echo "\nXML Firmado: [Se actualizaron los datos en la BD local]\n";
+        echo "</pre>\n";
 
         $_original = localAPI('GetInvoice', ['invoiceid' => $_id_factura], FACTEL_WHMCS_ADMIN);
         if (strcmp($_original['result'],"success")==0) {
-            if (strcmp($_original['status'],"Cancelled")!=0) {
-                if(strpos($_comprobante,"ESTADO=aceptado")!==FALSE) {
-                    Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
-                        [
-                            'estado' => 'Valida, comprobante aceptado.',
-                            'xmlData' => $_xmlData
-                        ]
-                    );
-                    echo "<script>setResult('Valida, comprobante aceptado.');</script>";
-                }elseif(strpos($_comprobante,"ESTADO=rechazado")!==FALSE) {
-                    Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
-                        [
-                            'estado' => 'Enviada, comprobante rechazado.',
-                            'xmlData' => $_xmlData
-                        ]
-                    );
-                    echo "<script>setResult('Enviada, comprobante rechazado.','<pre>".$_comprobante."</pre>');</script>";
-                }
-            } else {
+            $_comprobanteObj = json_decode($_comprobante);
+            $_xmlObj->comprobante = $_comprobante;
+            if ( strcmp($_comprobante, "null")==0 ) {
+                echo "<script>setResult('No válida, no se encuentra un comprobante aceptado.');</script>";
+                localAPI("UpdateInvoice", ['invoiceid' => $_id_factura, "status" => "Draft", "notes" => " " ], FACTEL_WHMCS_ADMIN);
                 Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
                     [
-                        'estado' => 'Cancelada'
+                        'estado' => 'Pendiente',
+                        'xmlData' => json_encode($_xmlObj)
                     ]
                 );
-                echo "<script>setResult('La factura fue anulada con una nota de credito.');</script>";
+            } elseif (sizeof($_comprobanteObj->notasCredito) > 0) {
+                // la factura tiene notas de credito
+                $notaObj = $_comprobanteObj->notasCredito[0];
+                echo "<script>setResult('Factura anulada con nota de credito #".$notaObj->clave."');</script>";
+                localAPI("UpdateInvoice", ['invoiceid' => $_id_factura, "status" => "Cancelled", "notes" => "Factura anulada con nota de credito #".$notaObj->clave ], FACTEL_WHMCS_ADMIN);
+                Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
+                    [
+                        'estado' => 'Anulada con NC#'.$notaObj->clave,
+                        'xmlData' => json_encode($_xmlObj)
+                    ]
+                );
+            } else {
+                // la factura NO tiene notas de credito
+                echo "<script>setResult('Válida, comprobante aceptado.');</script>";
+                localAPI("UpdateInvoice", ['invoiceid' => $_id_factura, "status" => "Unpaid", "notes" => " " ], FACTEL_WHMCS_ADMIN);
+                Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
+                    [
+                        'estado' => 'Aceptada',
+                        'xmlData' => json_encode($_xmlObj)
+                    ]
+                );
             }
         } else {
-            echo "<script>setResult('La factura fue anulada con una nota de credito.');</script>";
+            echo "<script>setResult('No se encuentra información de la factura #$_id_factura en el WHMCS');</script>";
         }
     } else {
         Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
@@ -145,7 +156,7 @@ function showMessage($_xmlObj, $_id_factura, $_clave, $_consecutivo, $_comproban
                 'xmlData' => $_xmlData
             ]
         );
-        echo "<script>setResult('Error, no se envio al API.',\"<pre>".$_xmlObj->detalle->message."</pre>\");</script>";
+        echo "<script>setResult('Error, no se envió al API.',\"<pre>".$_xmlObj->detalle->message."</pre>\");</script>";
     }
 }
 
@@ -167,6 +178,14 @@ SCRIPT;
 
     if (!empty($id_factura)) {
 
+        echo "<style>pre {
+            white-space: pre-wrap;       /* css-3 */
+            white-space: -moz-pre-wrap;  /* Mozilla, since 1999 */
+            white-space: -pre-wrap;      /* Opera 4-6 */
+            white-space: -o-pre-wrap;    /* Opera 7 */
+            word-wrap: break-word;       /* Internet Explorer 5.5+ */
+           }</style>";
+
         $factelHistoriCount = Capsule::table('mod_factel_historico')->where('id_factura',$id_factura)->count();
         $factelHistorico = Capsule::table('mod_factel_historico')->where('id_factura',$id_factura)->get();
 
@@ -175,10 +194,12 @@ SCRIPT;
         if($factelHistoriCount==1) {
             $_xmlData=$factelHistorico[0]->xmlData;
             if(!empty($_xmlData)) {
-                if(strpos($_xmlData,'"status":true')!==FALSE) {
-                    $xmlData = json_decode($_xmlData);
-                }
+                $xmlData = json_decode($_xmlData);
+            } else {
+                $xmlData=FALSE;
             }
+        } else {
+            $xmlData=FALSE;
         }
 
         if (!empty($_GET['getclave'])) {
@@ -208,11 +229,12 @@ SCRIPT;
             $comprobanteObj=json_decode($_comprobanteData);
             if($_comprobanteData!==FALSE) {
                 $xmlData->clave = $_cl;
-                $xmlData->consecutivo = $comprobanteObj->consecutivo;
+                $xmlData->consecutivo = substr($_cl,21,20);
                 $xmlData->comprobante = $comprobanteObj->comprobante;
                 $xmlData->xml=$comprobanteObj->xml;
-                // echo "XMLDATA UPDATE: <pre>".json_encode($xmlData)."</pre>";
-                showMessage($xmlData, $id_factura, $xmlData->clave, $xmlData->consecutivo, $xmlData->comprobante, json_encode($xmlData));
+                // echo "XMLDATA UPDATE: <pre>".$_comprobanteData."</pre>";
+                unset($xmlData->error);
+                showMessage($xmlData, $id_factura, $xmlData->clave, $xmlData->consecutivo, json_encode($xmlData->comprobante), json_encode($xmlData));
             }
             return;
         }elseif (!empty($_GET['anularfactura'])) {
@@ -224,15 +246,15 @@ SCRIPT;
                 $_cl=$_GET['anularfactura'];
             }
 
-            echo "<h2>Anulando la factura# $_cons, con la clave # $_cl</h2><br>";
+            echo "<h2>Anulando la factura# $id_factura, con la clave # $_cl</h2><br>";
             $_anularFactura = setFacturaAnulada(["invoiceid" => $id_factura]);
 
             if($_anularFactura!==FALSE) {
                 if ($_anularFactura->status == TRUE) {
                     echo "<pre>Se anulo la factura con NC#".$_anularFactura->clave."</pre>";
                 } else {
-                    echo "<pre>No se puede anular una factura que no ha sido aceptada</pre>";
-                    echo "Detalle:<br/><pre>".json_encode($_anularFactura->detalle)."</pre>";
+                    echo "<pre>No se puede anular la factura seleccionada</pre>";
+                    echo "Detalle:<br/><pre>[".$_anularFactura->estado."]</pre>";
                 }
             } else {
                 echo "<pre>No se pudo anular</pre>";
@@ -275,23 +297,22 @@ HEADER;
             $xmlRetry="";
             $xmlRetryLink="";
 
-            if ( strpos($estado, "ancela") === FALSE ) {
+            if ( strpos($estado, "nulad") === FALSE ) {
                 if(isset($factel_item->xmlData)) {
                     $xmlData = json_decode($factel_item->xmlData);
-                    if(strpos($xmlData->comprobante,"ESTADO=aceptado")!=FALSE) {
-                        $estado="Aceptada";
+                    if ( strcmp($estado,"Aceptada")==0) {
                         $comprobanteicon="<i style=\"color:green;\" class=\"fa fa-check\"></i>";
-                    }
-
-                    if(strpos($xmlData->comprobante,"ESTADO=recibido")!=FALSE || strpos($xmlData->comprobante,"ESTADO=procesando")!=FALSE || empty($xmlData->comprobante)) {
+                    } elseif ( strcmp($estado,"Pendiente")==0 ||
+                               strpos($xmlData->comprobante,"recepcionEstado=recibido")!=FALSE || 
+                               strpos($xmlData->comprobante,"recepcionEstado=procesando")!=FALSE || 
+                               empty($xmlData->comprobante)) {
                         $extraTemplateVariables['factel_pendiente']=1;
                         $estado_style="style='color:orange'";
                         $estado="Pendiente";
                         $comprobanteicon="<i style=\"color:orange;\" class=\"fa fa-clock-o\"></i>";
                         $xmlRetry="&nbsp;|&nbsp;Reintentar";
-                    }
-
-                    if(strpos($xmlData->comprobante,"ESTADO=rechazado")!=FALSE) {
+                    } elseif( strcmp($estado,"Rechazada")==0 || 
+                              strpos($xmlData->comprobante,"recepcionEstado=rechazado")!=FALSE ) {
                         $extraTemplateVariables['factel_rechazada']=1;
                         $estado_style="style='color:red'";
                         $estado="Rechazada";
@@ -309,9 +330,12 @@ HEADER;
                 );
                 $anularicon="<a onclick=\"return confirm('Desea anular la factura #".$factel_item->id_factura." ?')\" href=\"$modulelink&factelid=$id&anularfactura=1\"><i class=\"fa fa-trash\"></i></a>";
             } else {
-                $nctooltip=substr($estado,17);
-                $estado="Cancelada con NC";
-                $anularicon="<a title=\"$nctooltip\" href=\"#\"><i style=\"color:gray;\" class=\"fa fa-trash\"></i>&nbsp;<i style=\"color:green;\" class=\"fa fa-check\"></i></a>";
+                $nctooltip=substr($estado,15);
+                // 5061906180031013843430010000103 0000000005 187472544
+                // 50620061800310138434300100001010000010019161660158
+                $ncshortnum=substr($estado,15+31,10);
+                $estado="Anulada con NC ($ncshortnum)";
+                $anularicon="<a title=\"$nctooltip\" onclick=\"alert('Ya esta factura fue anulada.')\" href=\"#\"><i style=\"color:gray;\" class=\"fa fa-trash\"></i>&nbsp;<i style=\"color:green;\" class=\"fa fa-check\"></i></a>";
                 $estado_style="style='color:red'";
                 $comprobanteicon="<i style=\"color:green;\" class=\"fa fa-check\"></i>";
             }
@@ -441,7 +465,8 @@ function factel_clientarea($vars) {
                 if(file_exists($_file)) {
                     unlink($_file);
                 }
-                file_put_contents($_file,$_details["factel_comprobante"]);
+                $comprobanteObj = json_decode($_details["factel_comprobante"]);
+                file_put_contents($_file,objectPrinter($comprobanteObj));
                 downloadFile($_file);
             }
 

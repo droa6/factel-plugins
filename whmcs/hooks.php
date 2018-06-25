@@ -84,7 +84,7 @@ NOCONFIG;
                         ->where('estado', 'Pendiente')->count();    
         
         $countAnuladas = Capsule::table('mod_factel_historico')
-                        ->where('estado', 'like', '%ancelada con NC%')->count(); 
+                        ->where('estado', 'like', '%nulada con NC%')->count(); 
                         
         echo <<<ITEM
             <div class="icon-stats"><div class="row">
