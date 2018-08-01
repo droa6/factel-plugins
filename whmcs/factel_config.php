@@ -1,14 +1,14 @@
 <?php
  
 /**
- * Configuracion especifica del modulo para cada sistema.
+ * Configuración especifica del módulo para cada sistema.
  * @copyright Copyright (c) Itros Soluciones
  */
 
 // El nombre del usuario de WHMCS con permisos para usar el API interno.
 defined('FACTEL_WHMCS_ADMIN') OR define('FACTEL_WHMCS_ADMIN','usuario');
 
-// Numero minimo de factura a partir de la cual hay que generar una factura electronica
+// Numero minimo de factura a partir de la cual hay que generar una factura electrónica
 defined('FACTEL_OFFSET') OR define('FACTEL_OFFSET','0');
 
 // URL base para generar los links del sitio 
