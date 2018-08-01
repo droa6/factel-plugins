@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Modulo de conexion con el API de facturacion electronica FACTEL.
+ * Modulo de conexion con el API de facturación electrónica FACTEL.
  * Descripcion y funciones principales del modulo
  * @copyright Copyright (c) Itros Soluciones
  */
@@ -30,9 +30,9 @@ function getInvoiceUser($_invoiceid) {
 function factel_config() {
     $configarray = array(
     "name" => "Factel",
-    "description" => "Este modulo permite la integracion con FACTEL, producto de Itros para facturacion electronica.",
-    "version" => "1.4",
-    "author" => "<a href='https://itros.net/factel'>Itros Soluciones</a>",
+    "description" => "Este modulo permite la integracion con FACTEL, producto de Itros para facturación electrónica.",
+    "version" => "1.6",
+    "author" => "<a href='https://github.com/droa6/factel-plugins'>Itros Soluciones</a>",
     "language" => "spanish",
     "fields" => array(
         "token" => array ("FriendlyName" => "Token de conexion", "Type" => "text", "Size" => "25",
@@ -42,8 +42,6 @@ function factel_config() {
 }
 
 function factel_activate() {
-
-    // Create a new table.
     try {
         if (! Capsule::schema()->hasTable('mod_factel_historico')) {
             Capsule::schema()->create(
@@ -60,22 +58,18 @@ function factel_activate() {
                 }
             );
         }
-        return array('status'=>'success','description'=>'Listo, el modulo de Facturacion Electronica (FACTEL) se encuentra activado. Ahora necesita configurarlo con su cuenta.');
+        return array('status'=>'success','description'=>'Listo, el modulo de Facturación Electrónica (FACTEL) se encuentra activado. Ahora necesita configurarlo con su cuenta.');
     } catch (\Exception $e) {
         return array('status'=>'error','description'=> "Unable to create mod_factel_historico: {$e->getMessage()}" );
     }
-
 }
 
 function factel_deactivate() {
-
     try {
-        # Remove Custom DB Table
-        return array('status'=>'success','description'=>'Listo, el modulo de Factura Electronica se encuentra desactivado.');
+        return array('status'=>'success','description'=>'Listo, el modulo de Factura Electrónica se encuentra desactivado.');
     } catch (\Exception $e) {
         return array('status'=>'error','description'=>'Ocurrio un error desactivando el modulo, por favor intente nuevamente.');
     }
-
 }
 
 function getInvoicePDF($_invoiceid) {
@@ -93,80 +87,46 @@ function getInvoicePDF($_invoiceid) {
   return $apiresults ;
 }
 
-// ($xmlData, $id_factura, $xmlData->clave, $xmlData->consecutivo, $xmlData->comprobante, $xmlData->xml);
-function showMessage($_xmlObj, $_id_factura, $_clave, $_consecutivo, $_comprobante, $_xmlData, $updateStatus=FALSE) {
-    $_comprobante=str_replace("\n","",$_comprobante);
-    $_comprobante=str_replace("'","\"",$_comprobante);
+function showMessage($_id_factura, $_xmlObj) {
 
-    if ( strcmp($_comprobante, "null")!=0 && $_xmlObj->error !== TRUE ) {
+    if ( strcmp($_xmlObj->comprobante, "null")!=0 && $_xmlObj->error !== TRUE ) {
         echo '<div class="successbox" id="factel-message" style="display: none;"><strong><span class="title" id="factel-result-title"></span></strong><br><div id="factel-result-detail"></div></div>';
     } else {
         echo '<div class="infobox" id="factel-message" style="display: none;"><strong><span class="title" id="factel-result-title"></span></strong><br><div id="factel-result-detail"></div></div>';
     }
-    
-    if ($_xmlObj->error !== TRUE ) {
-        echo "<pre>Clave: [".$_clave."]\n";
-        echo "Consecutivo: [".$_consecutivo."]\n";
-        echo "Comprobante:\n".objectPrinter(json_decode($_comprobante))."\n";
-        echo "\nXML Firmado: [Se actualizaron los datos en la BD local]\n";
-        echo "</pre>\n";
 
-        $_original = localAPI('GetInvoice', ['invoiceid' => $_id_factura], FACTEL_WHMCS_ADMIN);
-        if (strcmp($_original['result'],"success")==0) {
-            $_comprobanteObj = json_decode($_comprobante);
-            $_xmlObj->comprobante = $_comprobante;
-            if ( strcmp($_comprobante, "null")==0 ) {
+    if ($_xmlObj->error !== TRUE ) {
+        $original = localAPI('GetInvoice', ['invoiceid' => $_id_factura], FACTEL_WHMCS_ADMIN);
+        if (strcmp($original['result'],"success")==0) {
+            echo "<pre>Clave: [".$_xmlObj->clave."]\n";
+            echo "Consecutivo: [".$_xmlObj->consecutivo."]\n";
+            echo "Comprobante:\n".objectPrinter(json_decode($_xmlObj->comprobante))."\n";
+            echo "</pre>\n";
+            $_comprobanteObj = json_decode($_xmlObj->comprobante);
+            if ( strcmp($_xmlObj->comprobante, "null")==0 ) {
                 echo "<script>setResult('No válida, no se encuentra un comprobante aceptado.');</script>";
-                localAPI("UpdateInvoice", ['invoiceid' => $_id_factura, "status" => "Draft", "notes" => " " ], FACTEL_WHMCS_ADMIN);
-                Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
-                    [
-                        'estado' => 'Pendiente',
-                        'xmlData' => json_encode($_xmlObj)
-                    ]
-                );
             } elseif (sizeof($_comprobanteObj->notasCredito) > 0) {
                 // la factura tiene notas de credito
                 $notaObj = $_comprobanteObj->notasCredito[0];
-                echo "<script>setResult('Factura anulada con nota de credito #".$notaObj->clave."');</script>";
-                localAPI("UpdateInvoice", ['invoiceid' => $_id_factura, "status" => "Cancelled", "notes" => "Factura anulada con nota de credito #".$notaObj->clave ], FACTEL_WHMCS_ADMIN);
-                Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
-                    [
-                        'estado' => 'Anulada con NC#'.$notaObj->clave,
-                        'xmlData' => json_encode($_xmlObj)
-                    ]
-                );
+                echo "<script>setResult('Factura anulada con nota de crédito electrónica #".$notaObj->clave."');</script>";
             } else {
                 // la factura NO tiene notas de credito
                 echo "<script>setResult('Válida, comprobante aceptado.');</script>";
-                localAPI("UpdateInvoice", ['invoiceid' => $_id_factura, "status" => "Unpaid", "notes" => " " ], FACTEL_WHMCS_ADMIN);
-                Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
-                    [
-                        'estado' => 'Aceptada',
-                        'xmlData' => json_encode($_xmlObj)
-                    ]
-                );
             }
         } else {
             echo "<script>setResult('No se encuentra información de la factura #$_id_factura en el WHMCS');</script>";
         }
     } else {
-        Capsule::table('mod_factel_historico')->where('id_factura',$_id_factura)->update(
-            [
-                'estado' => 'Error, no se envio al API',
-                'xmlData' => $_xmlData
-            ]
-        );
         echo "<script>setResult('Error, no se envió al API.',\"<pre>".$_xmlObj->detalle->message."</pre>\");</script>";
     }
 }
 
 function factel_output($vars) {
-
     $modulelink = $vars['modulelink'];
     $version = $vars['version'];
     $apiToken = $vars['token'];
     $LANG = $vars['_lang'];
-    
+
     echo <<<SCRIPT
         <script>function setResult(title,detail){
             $("#factel-result-title").html(title);
@@ -174,10 +134,10 @@ function factel_output($vars) {
             $("#factel-message").toggle(true);
             }</script>
 SCRIPT;
+
     $id_factura = $_GET['factelid'];
 
     if (!empty($id_factura)) {
-
         echo "<style>pre {
             white-space: pre-wrap;       /* css-3 */
             white-space: -moz-pre-wrap;  /* Mozilla, since 1999 */
@@ -185,60 +145,48 @@ SCRIPT;
             white-space: -o-pre-wrap;    /* Opera 7 */
             word-wrap: break-word;       /* Internet Explorer 5.5+ */
            }</style>";
-
         $factelHistoriCount = Capsule::table('mod_factel_historico')->where('id_factura',$id_factura)->count();
         $factelHistorico = Capsule::table('mod_factel_historico')->where('id_factura',$id_factura)->get();
 
         $xmlData=FALSE;
 
         if($factelHistoriCount==1) {
-            $_xmlData=$factelHistorico[0]->xmlData;
-            if(!empty($_xmlData)) {
-                $xmlData = json_decode($_xmlData);
+            $xmlData=$factelHistorico[0]->xmlData;
+            if(!empty($xmlData)) {
+                $xmlObj = json_decode($xmlData);
             } else {
-                $xmlData=FALSE;
+                $xmlObj=FALSE;
             }
         } else {
-            $xmlData=FALSE;
+            $xmlObj=FALSE;
         }
 
         if (!empty($_GET['getclave'])) {
-            if($xmlData->clave!==FALSE) {
-                echo $xmlData->clave;
+            if($xmlObj->clave!==FALSE) {
+                echo $xmlObj->clave;
             } else {
                 echo "...";
             }
             return;
         }
         elseif (!empty($_GET['getconsecutivo'])) {
-            if($xmlData->consecutivo!==FALSE) {
-                echo $xmlData->consecutivo;
+            if($xmlObj->consecutivo!==FALSE) {
+                echo $xmlObj->consecutivo;
             } else {
                 echo "...";
             }
             return;
         }elseif (!empty($_GET['refreshcomprobante'])) {
-            // recargar el comprobante desde Hacienda.
-            $_cl=$xmlData->clave;
+            $_cl=$xmlObj->clave;
             if (strlen(trim($_GET['refreshcomprobante']))==50) {
                 $_cl=$_GET['refreshcomprobante'];
             }
-            // echo "XMLDATA: <pre>$_xmlData</pre>";
             echo "<h2>Obteniendo el comprobante actualizado de la factura # $id_factura, con la clave # $_cl</h2><br>";
-            $_comprobanteData = getComprobanteFactel($_cl,$apiToken);
-            $comprobanteObj=json_decode($_comprobanteData);
-            if($_comprobanteData!==FALSE) {
-                $xmlData->clave = $_cl;
-                $xmlData->consecutivo = substr($_cl,21,20);
-                $xmlData->comprobante = $comprobanteObj->comprobante;
-                $xmlData->xml=$comprobanteObj->xml;
-                // echo "XMLDATA UPDATE: <pre>".$_comprobanteData."</pre>";
-                unset($xmlData->error);
-                showMessage($xmlData, $id_factura, $xmlData->clave, $xmlData->consecutivo, json_encode($xmlData->comprobante), json_encode($xmlData));
-            }
+            $comprobanteData = getComprobanteFactel($_cl,$apiToken);
+            setFacturaStatus($id_factura, $xmlObj, $comprobanteData);
+            showMessage($id_factura, $xmlObj);
             return;
         }elseif (!empty($_GET['anularfactura'])) {
-            // eliminar la factura con una nota de credito
             $_cl=$xmlData->clave;
             $_cons=$xmlData->consecutivo;
 
@@ -251,10 +199,10 @@ SCRIPT;
 
             if($_anularFactura!==FALSE) {
                 if ($_anularFactura->status == TRUE) {
-                    echo "<pre>Se anulo la factura con NC#".$_anularFactura->clave."</pre>";
+                    echo "<pre>Se anul la factura con nota de crédito electrónica #".$_anularFactura->clave."</pre>";
                 } else {
                     echo "<pre>No se puede anular la factura seleccionada</pre>";
-                    echo "Detalle:<br/><pre>[".$_anularFactura->estado."]</pre>";
+                    echo "Detalle:<br/><pre>".$_anularFactura["estado"]."</pre>";
                 }
             } else {
                 echo "<pre>No se pudo anular</pre>";
@@ -269,19 +217,15 @@ SCRIPT;
         }
  
         if($xmlData===FALSE) {
-            // no se ha firmado...
             echo "<h2>Firmando factura # $id_factura</h2><br>";
             $_xmlData = sendFacturaFactel($id_factura,$apiToken);
-            // DEBUG echo "<pre>$_xmlData</pre>";
             $xmlData=json_decode($_xmlData);
         } else {
             echo "<h2>Respuesta del firmado para la factura # $id_factura</h2><br>";
         }
-        showMessage($xmlData, $id_factura, $xmlData->clave, $xmlData->consecutivo, $xmlData->comprobante, $_xmlData);
+        showMessage($id_factura, $xmlData);
         return;
     }
-    
-    // No se pidio una factur en especial, muestra todas las facturas disponibles en el sistema.
 
     echo <<<HEADER
 <table id="sortabletbl1" class="datatable" width="100%" cellspacing="1" cellpadding="3" border="0">
@@ -322,17 +266,14 @@ HEADER;
                 } else {
                     $estado="Error, XML vacio";
                 } 
-                // UPDATE INVOICE STATUS
-                Capsule::table('mod_factel_historico')->where('id_factura',$factel_item->id_factura)->update(
+                Capsule::table('mod_factel_historico')->where('id_factura',$id)->update(
                     [
                         'estado' => $estado
                     ]
                 );
-                $anularicon="<a onclick=\"return confirm('Desea anular la factura #".$factel_item->id_factura." ?')\" href=\"$modulelink&factelid=$id&anularfactura=1\"><i class=\"fa fa-trash\"></i></a>";
+                $anularicon="<a onclick=\"anularFactura($id);\" href='#'><i id=\"anularFacturaIcon$id\" class=\"fa fa-trash\"></i></a>";
             } else {
                 $nctooltip=substr($estado,15);
-                // 5061906180031013843430010000103 0000000005 187472544
-                // 50620061800310138434300100001010000010019161660158
                 $ncshortnum=substr($estado,15+31,10);
                 $estado="Anulada con NC ($ncshortnum)";
                 $anularicon="<a title=\"$nctooltip\" onclick=\"alert('Ya esta factura fue anulada.')\" href=\"#\"><i style=\"color:gray;\" class=\"fa fa-trash\"></i>&nbsp;<i style=\"color:green;\" class=\"fa fa-check\"></i></a>";
@@ -345,40 +286,42 @@ HEADER;
             $receptor_style=empty($factel_item->receptor)?"style='color:orange'":'';
             $userid=$factel_item->userid;
 
+            /* DO NOT USE UNLESS REQUIRED
             // UPDATE ALL INVOICE OFFSETS
             if (TRUE) {
-                $_original = localAPI('GetInvoice', ['invoiceid' => $factel_item->id_factura], FACTEL_WHMCS_ADMIN);
+                $_original = localAPI('GetInvoice', ['invoiceid' => $id], FACTEL_WHMCS_ADMIN);
                 if (strcmp($_original['result'],"success")==0) {
                     if(strlen($_original["invoicenum"])==20 && !empty($_original["invoicenum"])) {
                         $_numeracion="<i class=\"fa fa-check\"></i>&nbsp;".$_original["invoicenum"];
                     } else {
-                        $_newInvoiceId=getConsecutiveFormat($factel_item->id_factura);
+                        $_newInvoiceId=getConsecutiveFormat($id);
                         if($_newInvoiceId!=FALSE) {
-                            $_modified = localAPI("UpdateInvoice",['invoiceid' => $factel_item->id_factura, "invoicenum" => trim("".$_newInvoiceId) ], FACTEL_WHMCS_ADMIN);
+                            $_modified = localAPI("UpdateInvoice",['invoiceid' => $id, "invoicenum" => trim("".$_newInvoiceId) ], FACTEL_WHMCS_ADMIN);
                             if (strcmp($_modified['result'],"success")==0) {
                                 $_numeracion="<i class=\"fa fa-check\"></i>&nbsp;".$_original["invoicenum"];
                             } else {
                                 $_numeracion="<i class=\"fa fa-times-circle \"></i>&nbsp;".$_original["invoicenum"];
                             }
                         } else {
-                            $_numeracion="<i class=\"fa fa-check\"></i>&nbsp;".$factel_item->id_factura;
+                            $_numeracion="<i class=\"fa fa-check\"></i>&nbsp;".$id;
                         }
                     }
                 }
             }
+            */
         } else {
             $estado_style="";
-            $estado = "Sin registro de factura electronica.";
+            $estado = "Sin registro de factura electrónica.";
         }
         
         $fadownload="<i class=\"fa fa-download\"></i>";
         $fafilepdf="<i class=\"fa fa-file-pdf-o\"></i>";
         $fafilexml="<i class=\"fa fa-file-excel-o\"></i>";
-        $farefresh="<i class=\"fa fa-refresh\"></i>";
+        $farefresh="<i id=\"refreshComprobanteIcon$id\" class=\"fa fa-refresh\"></i>";
 
         $adminurl = FACTEL_WEBSITE."index.php";
         echo <<<TABLA
-<tr><td style='text-align:center;'>$anularicon</td><td><a href='invoices.php?action=edit&id=$id'>$_numeracion</a></td><td><a $receptor_style href="clientsprofile.php?userid=$userid">$receptor</a></td><td>$fecha</td><td $estado_style>$estado</td><td $estado_style><a href='$modulelink&factelid=$id'>Ver respuesta<a><a href='$modulelink&factelid=$id&retry=1' style='color:red'>$xmlRetry<a></td><td style='text-align:center;'><a href='$adminurl?m=factel&clave=$id&xml=1'>$fafilexml<a></td><td style='text-align:center;'>$comprobanteicon&nbsp;&nbsp;<a href='$adminurl?m=factel&clave=$id&comprobante=1'>$fadownload<a>&nbsp;&nbsp;&nbsp;<a href='$modulelink&factelid=$id&refreshcomprobante=1'>$farefresh<a></td><td style='text-align:center;'><a href='$adminurl?m=factel&clave=$id&pdf=1'>$fafilepdf<a></td></tr>
+<tr><td style='text-align:center;'>$anularicon</td><td><a href='invoices.php?action=edit&id=$id'>$_numeracion</a></td><td><a $receptor_style href="clientsprofile.php?userid=$userid">$receptor</a></td><td>$fecha</td><td $estado_style>$estado</td><td $estado_style><a href='$modulelink&factelid=$id'>Ver respuesta<a><a href='$modulelink&factelid=$id&retry=1' style='color:red'>$xmlRetry<a></td><td style='text-align:center;'><a href='$adminurl?m=factel&clave=$id&xml=1'>$fafilexml<a></td><td style='text-align:center;'>$comprobanteicon&nbsp;&nbsp;<a href='$adminurl?m=factel&clave=$id&comprobante=1'>$fadownload<a>&nbsp;&nbsp;&nbsp;<a href='#' onclick='refreshComprobante($id);'>$farefresh<a></td><td style='text-align:center;'><a href='$adminurl?m=factel&clave=$id&pdf=1'>$fafilepdf<a></td></tr>
 TABLA;
 
     }
@@ -388,10 +331,56 @@ TABLA;
 TABLA;
     
     echo "</tbody></table>";
+    echo <<<SCRIPT
+<script>
+    function refreshComprobante(idFactura) {
+        if ($("#refreshComprobanteIcon"+idFactura).attr("class").indexOf("fa-check") >= 0) { 
+            alert("La actualización del comprobante se completó. Recargue ésta página para ver los cambios.");
+        } else {
+            if ($("#refreshComprobanteIcon"+idFactura).attr("class").indexOf("fa-spin") < 0) {
+                $("#refreshComprobanteIcon"+idFactura).attr("class","fa fa-refresh fa-spin fa-2x fa-fw");
+
+                $.ajax({
+                    method: "GET",
+                    url: "$modulelink&factelid="+idFactura+"&refreshcomprobante=1",
+                })
+                .done(function( msg ) {
+                    $("#refreshComprobanteIcon"+idFactura).attr("class","fa fa-check");
+                });
+            } else {
+                alert("La actualización del comprobante está en proceso.");
+            }
+        }
+    }
+
+    function anularFactura(idFactura) {
+        if ($("#anularFacturaIcon"+idFactura).attr("class").indexOf("fa-check") >= 0) { 
+            alert("La anulación se completó. Recargue ésta página para ver los cambios.");
+        } else {
+            if ($("#anularFacturaIcon"+idFactura).attr("class").indexOf("fa-spin") < 0) {
+                if ( confirm("Desea anular la factura #"+idFactura+" ?") ) {
+                    $("#anularFacturaIcon"+idFactura).attr("class","fa fa-spinner fa-spin fa-2x fa-fw");
+
+                    $.ajax({
+                        method: "GET",
+                        url: "$modulelink&factelid="+idFactura+"&anularfactura=1",
+                    })
+                    .done(function( msg ) {
+                        $("#anularFacturaIcon"+idFactura).attr("class","fa fa-check");
+                    });
+                }
+            } else {
+                alert("La anulación de la factura está en proceso.");
+            }
+        }
+    }
+
+</script>
+SCRIPT;
 }
 
 function factel_clientarea($vars) {
- 
+
     $modulelink = $vars['modulelink'];
     $version = $vars['version']; 
     $apiToken = $vars['token'];
@@ -437,10 +426,8 @@ function factel_clientarea($vars) {
         }
 
         $_details = hook_getFactelDetails(['invoiceid'=>$_invoiceid]);
-
+      
         if ( $_details!==FALSE && $_details['is_factel'] ) {
-            createQrCode($_invoiceid, $_details["factel_consecutivo"],  $_details["factel_clave"]);
-
             if ($_downloadpdf==TRUE && $_details['factel_aceptada']) {
                 $_invoicepdf = getInvoicePDF($_invoiceid);
                 $_file="downloads/factura_pdf_".$_details["factel_consecutivo"].".pdf";
@@ -512,7 +499,7 @@ function factel_clientarea($vars) {
     }
 
     $data = array(
-        'pagetitle' => 'Facturacion Electrónica',
+        'pagetitle' => 'Facturación Electrónica',
         'breadcrumb' => array('index.php?m=factel'=>'Ver mi factura electrónica'),
         'templatefile' => 'factel',
         'requirelogin' => false,
