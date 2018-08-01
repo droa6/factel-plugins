@@ -1,7 +1,6 @@
 <?php
- 
 /**
- * Modulo de conexion con el API de facturacion electronica FACTEL.
+ * Modulo de conexion con el API de facturación electrónica FACTEL.
  * Modulo de conexiones con WHMCS
  * @copyright Copyright (c) Itros Soluciones
  */
@@ -25,12 +24,9 @@ function getModuleConfig() {
 }
 
 add_hook('ClientAreaPageViewInvoice', 1, 'hook_getFactelDetails');
-
 add_hook('InvoiceCancelled', 1, 'setFacturaAnulada');
-
-add_hook('InvoiceCreationPreEmail', 1, 'getFacturaDetails');
-add_hook('InvoiceCreation', 1, 'getFacturaDetails');
-
+add_hook('InvoiceCreationPreEmail', 1, 'crearFacturaElectronica');
+add_hook('InvoiceCreation', 1, 'crearFacturaElectronica');
 add_hook('AdminHomeWidgets', 1, function() {
     return new FactelStatusWidget();
 });
@@ -40,8 +36,8 @@ add_hook('AdminHomeWidgets', 1, function() {
  */
 class FactelStatusWidget extends \WHMCS\Module\AbstractWidget {
 
-    protected $title = 'Facturacion Electronica';
-    protected $description = 'Facturacion Electronica';
+    protected $title = 'Facturación Electrónica';
+    protected $description = 'Facturación Electrónica';
     protected $weight = 150;
     protected $columns = 1;
     protected $cache = false;
