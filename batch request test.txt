@@ -1,0 +1,30 @@
+<?php
+
+$curl = curl_init();
+
+curl_setopt_array($curl, array(
+  CURLOPT_URL => "https://itros.cloud.tyk.io/factel-dev/tyk/batch/",
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_ENCODING => "",
+  CURLOPT_MAXREDIRS => 10,
+  CURLOPT_TIMEOUT => 30,
+  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+  CURLOPT_CUSTOMREQUEST => "POST",
+  CURLOPT_POSTFIELDS => "{\r\n  \"requests\": [\r\n    {\r\n      \"method\": \"POST\",\r\n      \"headers\": {\r\n        \"x-tyk-test\": \"1\",\r\n        \"x-tyk-version\": \"1.2\",\r\n        \"FACTEL-API-KEY\": \"5b6227d249e9990001f5d712ca7b5c89c6434d3eb910180f210a02e4\",\r\n        \"content-type\": \"application/json\"\r\n      },\r\n      \"body\": \"{\\\"clave\\\":\\\"00100001010000000303\\\"}\",\r\n      \"relative_url\": \"comprobantes\"\r\n  },\r\n  {\r\n    \"method\": \"POST\",\r\n    \"headers\": {\r\n      \"x-tyk-test\": \"2\",\r\n      \"x-tyk-version\": \"1.2\",\r\n      \"FACTEL-API-KEY\": \"5b6227d249e9990001f5d712ca7b5c89c6434d3eb910180f210a02e4\",\r\n      \"content-type\": \"application/json\"\r\n    },\r\n    \"body\": \"{\\\"clave\\\":\\\"00100001010000000303\\\"}\",\r\n    \"relative_url\": \"comprobantes\"\r\n    },\r\n    {\r\n    \"method\": \"POST\",\r\n    \"headers\": {\r\n      \"x-tyk-test\": \"3\",\r\n      \"x-tyk-version\": \"1.2\",\r\n      \"FACTEL-API-KEY\": \"5b6227d249e9990001f5d712ca7b5c89c6434d3eb910180f210a02e4\",\r\n      \"content-type\": \"application/json\"\r\n    },\r\n    \"body\": \"{\\\"clave\\\":\\\"00100001010000000303\\\"}\",\r\n    \"relative_url\": \"comprobantes\"\r\n    },\r\n    {\r\n    \"method\": \"POST\",\r\n    \"headers\": {\r\n      \"x-tyk-test\": \"4\",\r\n      \"x-tyk-version\": \"1.2\",\r\n      \"FACTEL-API-KEY\": \"5b6227d249e9990001f5d712ca7b5c89c6434d3eb910180f210a02e4\",\r\n      \"content-type\": \"application/json\"\r\n    },\r\n    \"body\": \"{\\\"clave\\\":\\\"00100001010000000303\\\"}\",\r\n    \"relative_url\": \"comprobantes\"\r\n    }\r\n  ],\r\n  \"suppress_parallel_execution\": false\r\n}",
+  CURLOPT_HTTPHEADER => array(
+    "cache-control: no-cache",
+    "content-type: application/json",
+    "postman-token: ae4243e4-2412-0578-bda9-b5014b2b856e"
+  ),
+));
+
+$response = curl_exec($curl);
+$err = curl_error($curl);
+
+curl_close($curl);
+
+if ($err) {
+  echo "cURL Error #:" . $err;
+} else {
+  echo $response;
+}
