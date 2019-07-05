@@ -1,4 +1,7 @@
 # factel-plugins
+
+# FYI, Sin actualizar... no funciona con el API actual. 
+
 Ejemplo de plugins para facturación electrónica en Costa Rica con *Factel*
 
 Los plugins se brindan como un ejemplo de conexion y *no se garantiza* su funcionamiento a menos que se cuente con un token de conexion para *Factel*.
