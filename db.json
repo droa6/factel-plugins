@@ -1,5 +1,5 @@
 {
-    "posts1": [
+    "first": [
         {
             "userId": 1,
             "id": 1,
@@ -121,7 +121,7 @@
             "completed": true
         }
     ],
-    "posts2": [
+    "second": [
         {
             "userId": 1,
             "id": 1,
